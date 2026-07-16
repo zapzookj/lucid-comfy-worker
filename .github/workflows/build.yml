@@ -1,0 +1,48 @@
+name: build-comfy-worker
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "image tag (e.g. 0.1.0)"
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # GHA 기본 러너는 여유 디스크 ~14GB → 대용량 정리로 30GB+ 확보
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
+
+      - name: Download models from S3
+        run: |
+          mkdir -p models_local
+          aws s3 cp s3://${{ secrets.ASSET_BUCKET }}/assets-build/ models_local/ --recursive
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/lucid-comfy-worker:${{ inputs.tag }}
