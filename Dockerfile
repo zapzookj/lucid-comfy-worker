@@ -5,9 +5,26 @@
 FROM runpod/worker-comfyui:5.8.6-base
 
 # ── L1: 커스텀 노드 (가끔 바뀜) ───────────────────────────
-# comfy-node-install: worker 제공 CLI. 이름은 https://registry.comfy.org 에서 확인
-RUN comfy-node-install comfyui-impact-pack comfyui-impact-subpack
+# 버전 핀: 재현성 확보 (registry 최신 Active 버전, 2026-07-20 기준)
+RUN comfy-node-install comfyui-impact-pack@8.28.3 comfyui-impact-subpack@1.3.5
 # 누끼는 커스텀 노드 불필요 — wf3의 배경 제거 체인(RemoveBackground 등)은 ComfyUI 코어다.
+
+# ── L1.5: [FaceDetailer Fix 2026-07-20] 의존성 venv 미러링 + 빌드 시점 검증 ──
+# 원인: comfy-node-install(comfy-cli)은 노드 pip 의존성을 워크스페이스 venv(/comfyui/.venv)에
+#   설치하지만, start.sh는 ComfyUI를 /opt/venv 파이썬으로 기동한다. 베이스 이미지의 미러링
+#   (DR-1170)은 "베이스 빌드 시점"에만 실행되므로, 파생 이미지에서 추가한 Impact Pack의
+#   의존성이 /opt/venv에 없어 IMPORT FAILED → FaceDetailer 미등록 → missing_node_type.
+#   (참고: runpod-workers/worker-comfyui#86 — 동일 증상)
+RUN set -e; for r in /comfyui/custom_nodes/*/requirements.txt; do \
+      if [ -f "$r" ]; then /opt/venv/bin/pip install -r "$r"; fi; \
+    done
+
+# 빌드 시점 임포트 검증 — IMPORT FAILED가 하나라도 있으면 빌드를 실패시킨다
+#   (배포 후 missing_node_type으로 뒤늦게 발견하는 사고 방지. quick-test는 모델 없이 CPU 부팅만 확인)
+RUN cd /comfyui \
+ && (timeout 300 /opt/venv/bin/python main.py --quick-test-for-ci --cpu 2>&1 | tee /tmp/comfy-boot.log) \
+ && ! grep -q "IMPORT FAILED" /tmp/comfy-boot.log \
+ && /opt/venv/bin/python -c "import cv2, ultralytics, segment_anything, piexif, dill; import numpy; print('deps OK, numpy', numpy.__version__)"
 
 # ── L2: 대형 고정 모델 (거의 안 바뀜) ─────────────────────
 # models_local/ 은 GHA가 S3에서 받아 채운다 (3.3)
