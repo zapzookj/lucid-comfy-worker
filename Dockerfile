@@ -32,6 +32,10 @@ COPY models_local/checkpoints/wai_illustrious.safetensors /comfyui/models/checkp
 
 # ── L3: 소형 모델 (변경 가능성 있음 → 마지막) ─────────────
 COPY models_local/loras/detail_lora.safetensors /comfyui/models/loras/detail_lora.safetensors
+# [2026-08-04 남캐 파이프라인] Male_Type(STYLE) LoRA — civitai 1782159.
+#   wai_illustrious의 여캐 편향 보정용 — 백엔드가 gender=MALE일 때만 LoraLoader 노드를
+#   워크플로 그래프에 조건부 주입한다(여캐 생성 경로는 무영향). S3 assets-build/loras/ 미러.
+COPY models_local/loras/male_type.safetensors /comfyui/models/loras/male_type.safetensors
 RUN mkdir -p /comfyui/models/ultralytics/bbox /comfyui/models/background_removal
 COPY models_local/ultralytics/bbox/anime_face_yolov8.pt /comfyui/models/ultralytics/bbox/anime_face_yolov8.pt
 # wf3 누끼 모델 — 출처: https://huggingface.co/Comfy-Org/BiRefNet (background_removal/birefnet.safetensors, ~424MB)
