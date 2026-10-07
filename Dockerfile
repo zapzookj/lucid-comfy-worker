@@ -42,4 +42,8 @@ COPY models_local/ultralytics/bbox/anime_face_yolov8.pt /comfyui/models/ultralyt
 #   sha256=9ab37426bf4de0567af6b5d21b16151357149139362e6e8992021b8ce356a154
 #   S3 assets-build/background_removal/ 에 미러 후 빌드 (checkpoints 폴더 아님에 주의)
 COPY models_local/background_removal/birefnet.safetensors /comfyui/models/background_removal/birefnet.safetensors
+# Neutral hand restoration (2026-10-08): pinned detector, separate from anime-face detection.
+# Download the small model directly so existing S3 assets and scene workers need no migration.
+RUN /opt/venv/bin/python -c "import hashlib, pathlib, urllib.request; p=pathlib.Path('/comfyui/models/ultralytics/bbox/hand_yolov8n.pt'); b=urllib.request.urlopen('https://huggingface.co/Bingsu/adetailer/resolve/53cc19de382014514d9d4038601d261a7faa9b7b/hand_yolov8n.pt', timeout=120).read(); assert hashlib.sha256(b).hexdigest() == '3991202eb69e9ddcb3b9ba80cdeb41e734ffaf844403d6c9f47d515cd88c6f29', 'hand detector checksum mismatch'; p.write_bytes(b)" \
+ && /opt/venv/bin/python -c "from ultralytics import YOLO; m=YOLO('/comfyui/models/ultralytics/bbox/hand_yolov8n.pt'); assert set(m.names.values()) == {'hand'}, m.names; print('hand detector OK')"
 # (선택) COPY models_local/sams/... /comfyui/models/sams/...
