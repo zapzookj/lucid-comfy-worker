@@ -5,6 +5,14 @@ on:
       tag:
         description: "image tag (e.g. 0.1.0)"
         required: true
+      dockerfile:
+        description: "Dockerfile (full) | Dockerfile.layer (incremental on base_image, no S3)"
+        required: false
+        default: "Dockerfile"
+      base_image:
+        description: "Dockerfile.layer only — pinned base, e.g. zapzook/lucid-comfy-worker@sha256:..."
+        required: false
+        default: ""
 
 jobs:
   build:
@@ -22,6 +30,7 @@ jobs:
           haskell: true
 
       - name: Configure AWS credentials
+        if: inputs.dockerfile == 'Dockerfile'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -29,6 +38,7 @@ jobs:
           aws-region: ap-northeast-2
 
       - name: Download models from S3
+        if: inputs.dockerfile == 'Dockerfile'
         run: |
           mkdir -p models_local
           aws s3 cp s3://${{ secrets.ASSET_BUCKET }}/assets-build/ models_local/ --recursive
@@ -43,6 +53,9 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
+          file: ${{ inputs.dockerfile }}
+          build-args: |
+            BASE_IMAGE=${{ inputs.base_image }}
           platforms: linux/amd64
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/lucid-comfy-worker:${{ inputs.tag }}

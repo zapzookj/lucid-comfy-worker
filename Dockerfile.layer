@@ -1,0 +1,29 @@
+# [2026-11-09] 증분 빌드 — 운영 검증된 이미지 위에 레퍼런스 빌더용 레이어만 얹는다.
+#   전체 빌드(Dockerfile)는 GHA가 AWS S3(assets-build/)에서 대형 모델을 받는데, 탈AWS 이후 그 키가 무효라
+#   실패한다(run #8 "security token ... invalid"). 이 파일은 S3 없이 빌드되고, 베이스가 운영 digest와
+#   동일하므로 기존 노드·모델·핸들러 동작이 바뀌지 않는다. 내용은 Dockerfile의 태거·핸들러 부분과 같다.
+#   사용: build.yml 입력 dockerfile=Dockerfile.layer, base_image=zapzook/lucid-comfy-worker@sha256:...
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+# WD14 태거 — 커밋 고정 클론. 노드 requirements는 onnxruntime 하나뿐이라 CPU판을 핀 설치한다.
+#   노드 기본 공급자에 CUDA가 있어 CPU 런타임에서 매 실행 경고가 나므로 CPU 전용으로 고정한다(1장 ~10초).
+RUN git clone https://github.com/pythongosssss/ComfyUI-WD14-Tagger /comfyui/custom_nodes/ComfyUI-WD14-Tagger \
+ && git -C /comfyui/custom_nodes/ComfyUI-WD14-Tagger checkout 9e0a6e700299182fc05c58b62e7ad9f72182a78b \
+ && /opt/venv/bin/pip install onnxruntime==1.22.0 \
+ && /opt/venv/bin/python -c "import json, pathlib; p=pathlib.Path('/comfyui/custom_nodes/ComfyUI-WD14-Tagger/pysssss.json'); c=json.loads(p.read_text()); c['settings']['ortProviders']=['CPUExecutionProvider']; c['settings']['model']='wd-eva02-large-tagger-v3'; p.write_text(json.dumps(c, indent=2))"
+
+# 부팅 검증 — 기존 노드 포함 IMPORT FAILED 0, 핵심 의존성 import
+RUN cd /comfyui \
+ && (timeout 300 /opt/venv/bin/python main.py --quick-test-for-ci --cpu 2>&1 | tee /tmp/comfy-boot.log) \
+ && ! grep -q "IMPORT FAILED" /tmp/comfy-boot.log \
+ && grep -q "ComfyUI-WD14-Tagger" /tmp/comfy-boot.log \
+ && /opt/venv/bin/python -c "import cv2, ultralytics, segment_anything, piexif, dill, onnxruntime; import numpy; print('deps OK, numpy', numpy.__version__, 'ort', onnxruntime.__version__)"
+
+# 태거 모델 — SmilingWolf/wd-eva02-large-tagger-v3 @ b25b82a (체크섬 고정, 런타임 HF 다운로드 제거)
+COPY patches/fetch_tagger_model.py /tmp/fetch_tagger_model.py
+RUN /opt/venv/bin/python /tmp/fetch_tagger_model.py /comfyui/custom_nodes/ComfyUI-WD14-Tagger/models
+
+# 핸들러 패치 — 텍스트 출력(ui.tags)을 output.texts[]로 반환. 앵커 불일치 시 빌드 실패.
+COPY patches/handler_text_outputs.py /tmp/handler_text_outputs.py
+RUN /opt/venv/bin/python /tmp/handler_text_outputs.py /handler.py && /opt/venv/bin/python -m py_compile /handler.py
